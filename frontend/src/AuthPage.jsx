@@ -3,8 +3,8 @@ import React, { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 // TODO: These should be in environment variables
-const supabaseUrl = 'https://yvdfhrckvimrphstwnhi.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2ZGZocmNrdmltcnBoc3R3bmhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0MTY2ODUsImV4cCI6MjA4Mzk5MjY4NX0.JBgjgv45XxLhm1-egdW1XXy2ZXxpcBbWnTLpa40qnBw';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
