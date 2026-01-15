@@ -6,10 +6,10 @@ from dotenv import load_dotenv
 # Load env before imports that might need it
 load_dotenv()
 
-from backend.schemas import ChatRequest, ChatResponse
-from backend.services.llm_service import analyze_message, generate_ai_response
-from backend.services.memory_service import store_memory, retrieve_relevant_memory, decay_memories
-from backend.core.database import get_supabase_client
+from schemas import ChatRequest, ChatResponse
+from services.llm_service import analyze_message, generate_ai_response
+from services.memory_service import store_memory, retrieve_relevant_memory, decay_memories
+from core.database import get_supabase_client
 
 app = FastAPI(title="ROOTED AI - Backend")
 supabase = get_supabase_client()

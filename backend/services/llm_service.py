@@ -1,7 +1,7 @@
 import json
 from openai import OpenAI
-from backend.core.config import get_settings
-from backend.schemas import AnalyzedContext
+from core.config import get_settings
+from schemas import AnalyzedContext
 
 settings = get_settings()
 

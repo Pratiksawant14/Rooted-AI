@@ -1,9 +1,9 @@
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
-from backend.core.config import get_settings
-from backend.core.database import get_supabase_client
-from backend.schemas import AnalyzedContext
+from core.config import get_settings
+from core.database import get_supabase_client
+from schemas import AnalyzedContext
 import uuid
 from datetime import datetime, timedelta, timezone
 
