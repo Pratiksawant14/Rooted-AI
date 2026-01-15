@@ -1,0 +1,24 @@
+
+# Root level ignores
+
+# Dependencies
+node_modules/
+backend/venv/
+backend/env/
+frontend/node_modules/
+
+# Secrets
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+
+# System
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+frontend/dist/
+backend/__pycache__/
+chroma_db/
