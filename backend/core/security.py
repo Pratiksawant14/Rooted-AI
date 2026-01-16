@@ -1,10 +1,10 @@
 from fastapi import Header, HTTPException, Depends
 from core.database import get_supabase_client
-from gotrue.types import User
+from typing import Any
 
 supabase = get_supabase_client()
 
-async def get_current_user(authorization: str = Header(None)) -> User:
+async def get_current_user(authorization: str = Header(None)) -> Any:
     """
     Verifies the Supabase JWT from the Authorization header.
     Returns the user object if valid, raises 401 otherwise.
