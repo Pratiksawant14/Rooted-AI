@@ -4,7 +4,7 @@ A context-aware AI chatbot with tree-structured memory.
 
 ## Tech Stack
 - **Backend**: Python + FastAPI
-- **Frontend**: React + Vite + Vanilla CSS
+- **Frontend**: React + Vite + Tailwind CSS
 - **Database**: Supabase (PostgreSQL)
 - **Vector Search**: ChromaDB
 - **LLM**: OpenAI (GPT-4o)
