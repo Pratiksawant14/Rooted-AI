@@ -19,6 +19,7 @@ settings = get_settings()
 
 # CORS Hardening
 origins = settings.ALLOWED_ORIGINS.split(",")
+print(f"Allowed Origins: {origins}")
 
 app.add_middleware(
     CORSMiddleware,
