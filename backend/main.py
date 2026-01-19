@@ -84,5 +84,3 @@ async def chat_endpoint(request: ChatRequest, authorization: str = Header(None),
         print(f"Error processing chat: {e}")
         # Return a valid error response structure if possible, or raise HTTP exc
         raise HTTPException(status_code=500, detail=str(e))
-
-
