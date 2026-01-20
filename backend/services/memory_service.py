@@ -205,7 +205,7 @@ def retrieve_relevant_memory(user_id: str, query: str, domains: list[str], supab
 
     # 0. FETCH ROOT
     root_res = supabase_client.table("root_profile").select("*").eq("user_id", user_id).maybe_single().execute()
-    if root_res.data:
+    if root_res and root_res.data:
         memory_map["root"] = root_res.data
     
     # 1. FETCH STEM (All, or heavily prioritized)
