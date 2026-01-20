@@ -1,8 +1,0 @@
-[phases.setup]
-nixPkgs = ["python311"]
-
-[phases.install]
-cmds = ["pip install -r backend/requirements.txt"]
-
-# Note: We use Procfile for the start command to ensure it's treated as a web service.
-# nixpacks.toml here is primarily for environment setup and installation.

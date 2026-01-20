@@ -14,12 +14,6 @@ from core.config import get_settings
 from core.security import get_current_user
 
 app = FastAPI(title="ROOTED AI - Backend")
-
-@app.on_event("startup")
-async def startup_event():
-    print("Startup event: Application is ready and listening.")
-    print(f"Server is running on port: {os.environ.get('PORT', 'Unknown')}")
-
 supabase = get_supabase_client()
 settings = get_settings()
 
@@ -41,7 +35,6 @@ app.add_middleware(
 
 @app.get("/")
 def health_check():
-    print("Health check endpoint hit!")
     return {"status": "ok", "system": "Rooted AI MVP"}
 
 @app.post("/chat", response_model=ChatResponse)
