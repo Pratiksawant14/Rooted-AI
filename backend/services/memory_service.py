@@ -24,6 +24,22 @@ def classify_priority(context: AnalyzedContext) -> str:
     """
     Decide STEM, BRANCH, or LEAF based on context.
     """
+    content_lower = context.core_content.lower()
+    
+    # === HARD GUARD: PREVENT BELIEFS/VALUES AS STEM ===
+    # Beliefs/Values (Subjective, Present Tense) -> LEAF
+    belief_markers = ["i believe", "i think", "i value", "important to me", "should", "opinion"]
+    is_belief = any(marker in content_lower for marker in belief_markers)
+    
+    # Role Identity (Factual) -> STEM allowed
+    # (e.g. "i am a", "my job is", "i live in") - simplistic check, but effective for now
+    role_markers = ["i am a", "i work as", "i live in", "my role is"]
+    is_role = any(marker in content_lower for marker in role_markers)
+    
+    if is_belief and not is_role:
+        return "LEAF"
+
+    # === STANDARD CLASSIFICATION ===
     if context.category == "identity" or context.time_scale == "long_term":
         return "STEM"
     
