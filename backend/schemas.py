@@ -14,4 +14,4 @@ class AnalyzedContext(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
-    memory_used: Dict[str, List[str]] # stem, branch, leaf
+    memory_used: Dict[str, Any] # root (dict), stem, branch, leaf (lists)
