@@ -35,6 +35,7 @@ app.add_middleware(
 
 @app.get("/")
 def health_check():
+    print("Health check endpoint hit!")
     return {"status": "ok", "system": "Rooted AI MVP"}
 
 @app.post("/chat", response_model=ChatResponse)
