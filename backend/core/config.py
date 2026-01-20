@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str
     OPENAI_API_KEY: str
     CHROMA_DB_PATH: str = "./chroma_db"
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8000,https://rooted-ai.vercel.app,https://rooted-ai-tau.vercel.app"
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8000,http://localhost:5173,https://rooted-ai.vercel.app,https://rooted-ai-tau.vercel.app"
     
     class Config:
         env_file = ".env"
