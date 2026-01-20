@@ -98,6 +98,15 @@ def store_memory(user_id: str, context: AnalyzedContext, supabase_client) -> dic
     
     if eligibility.get("is_eligible"):
         print(f"ROOT UPDATE DETECTED: {eligibility}")
+
+        # RATE LIMITING: Prevent Persona Drift
+        # Rule: Only 1 ROOT update every 10 minutes (unless new profile)
+        if root_profile:
+            last_update = datetime.fromisoformat(root_profile.get("last_updated_at", str(datetime.min)))
+            time_since = datetime.now(timezone.utc) - last_update
+            if time_since < timedelta(minutes=10):
+                print(f"ROOT UPDATE SKIPPED: Rate limit active ({time_since} < 10m)")
+                return {"status": "skipped_rate_limit", "reason": "Persona drift protection"}
         
         # Prepare updates
         new_summary = eligibility.get("summary_update", "")
@@ -135,7 +144,9 @@ def store_memory(user_id: str, context: AnalyzedContext, supabase_client) -> dic
                 "persona_summary": new_summary,
                 "traits": new_traits,
                 "values": new_values,
-                "confidence_score": 1.0
+                "confidence_score": 1.0,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "last_updated_at": datetime.now(timezone.utc).isoformat()
             }).execute()
             
         # HARD STOP: Do not store as memory node

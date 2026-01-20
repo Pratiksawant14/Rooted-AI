@@ -175,15 +175,21 @@ def check_root_eligibility(context: AnalyzedContext) -> dict:
     Category: {context.category}
     Time Scale: {context.time_scale}
 
-    RULES FOR ELIGIBILITY (ALL MUST BE TRUE):
-    1. Is it a permanent fact? (e.g. "I grew up in Pune", NOT "I live in Pune")
-    2. Is it about origin, culture, upbringing, or fundamental values?
-    3. Is it unlikely to EVER change?
+    STRICT ELIGIBILITY RULES (ALL MUST BE TRUE):
+    1. **Historical Grounding**: The statement MUST be about the user's past, upbringing, origin, or established background (e.g. "I grew up...", "My family always...", "I was raised...").
+    2. **Immutability**: It must be a fact that cannot change (like where they were born), not a current opinion or value statement (like "I value honesty").
+    3. **Identity Relevance**: It must define who they ARE, not just what they did.
+
+    EXAMPLES:
+    - "I grew up in Pune" -> ELIGIBLE (Origin)
+    - "My parents taught me to be honest" -> ELIGIBLE (Upbringing/Value Origin)
+    - "I value honesty" -> NOT ELIGIBLE (Present-tense value, belongs in STEM)
+    - "I live in Mumbai" -> NOT ELIGIBLE (Current state, belongs in STEM/BRANCH)
 
     OUTPUT JSON:
     {{
       "is_eligible": true | false,
-      "reason": "why",
+      "reason": "Explain why it meets strict historical criteria",
       "extracted_traits": {{ "trait_name": "value" }}, 
       "extracted_values": ["value1", "value2"],
       "summary_update": "Concise reinforcement of this identity fact"
