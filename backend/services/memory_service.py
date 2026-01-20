@@ -4,6 +4,7 @@ from chromadb.config import Settings as ChromaSettings
 from core.config import get_settings
 from core.database import get_supabase_client
 from schemas import AnalyzedContext
+from services.llm_service import check_root_relevance
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -87,6 +88,13 @@ def decay_memories(user_id: str, supabase_client):
         pass
 
 def store_memory(user_id: str, context: AnalyzedContext, supabase_client) -> dict:
+    # 0. Fetch ROOT Profile for Alignment Check
+    root_res = supabase_client.table("root_profile").select("*").eq("user_id", user_id).single().execute()
+    root_profile = root_res.data if root_res.data else None
+    
+    # Check Alignment
+    alignment = check_root_relevance(context.core_content, root_profile)
+
     # 1. Noise Filtering
     # If priority == LEAF AND domain == "general" AND importance is low -> DISCARD
     priority = classify_priority(context)
@@ -94,6 +102,11 @@ def store_memory(user_id: str, context: AnalyzedContext, supabase_client) -> dic
 
     if priority == "LEAF" and "general" in context.domains and context.importance == "low":
         return None
+
+    # ROOT MODIFIER RULE:
+    # If candidate contradicts ROOT -> prevent promotion, keep as LEAF
+    if alignment == "contradictory":
+        priority = "LEAF"
 
     # 2. Check for Duplicates / Reinforcement
     # Search Chroma for very similar content
@@ -124,16 +137,17 @@ def store_memory(user_id: str, context: AnalyzedContext, supabase_client) -> dic
         updates = {
             "reinforcement_count": new_count,
             "confidence": new_confidence,
-            "last_used_at": datetime.now(timezone.utc).isoformat()
+            "last_used_at": datetime.now(timezone.utc).isoformat(),
+            "root_alignment": alignment
         }
         
         # PROMOTION LOGIC
-        # LEAF -> BRANCH if count >= 3
-        if data['priority'] == "LEAF" and new_count >= 3:
+        # LEAF -> BRANCH if count >= 3 AND not contradictory
+        if data['priority'] == "LEAF" and new_count >= 3 and alignment != "contradictory":
             updates['priority'] = "BRANCH"
         
-        # BRANCH -> STEM if long-term + high confidence (strict)
-        if data['priority'] == "BRANCH" and new_confidence > 0.9 and context.time_scale == "long_term":
+        # BRANCH -> STEM if long-term + high confidence (strict) AND aligned/neutral
+        if data['priority'] == "BRANCH" and new_confidence > 0.9 and context.time_scale == "long_term" and alignment != "contradictory":
             updates['priority'] = "STEM"
             
         final = supabase_client.table("memory_nodes").update(updates).eq("id", existing_id).execute()
@@ -149,7 +163,8 @@ def store_memory(user_id: str, context: AnalyzedContext, supabase_client) -> dic
             "content": context.core_content,
             "confidence": context.confidence,
             "reinforcement_count": 1,
-            "last_used_at": datetime.now(timezone.utc).isoformat()
+            "last_used_at": datetime.now(timezone.utc).isoformat(),
+            "root_alignment": alignment
         }
         
         data = supabase_client.table("memory_nodes").insert(row).execute()
@@ -160,7 +175,8 @@ def store_memory(user_id: str, context: AnalyzedContext, supabase_client) -> dic
             "user_id": user_id,
             "domain": primary_domain,
             "priority": priority,
-            "type": context.category
+            "type": context.category,
+            "root_alignment": alignment
         }
         
         memory_collection.add(
@@ -174,16 +190,23 @@ def store_memory(user_id: str, context: AnalyzedContext, supabase_client) -> dic
 def retrieve_relevant_memory(user_id: str, query: str, domains: list[str], supabase_client) -> dict:
     """
     Tree-Guided Retrieval:
+    0. ROOT: The core persona anchor.
     1. STEM: ALL stem nodes (Identity/Facts) - Unconditional
     2. BRANCH: Active branches matching domain
     3. LEAF: Only recent & relevant (Vector Search)
     """
     
     memory_map = {
+        "root": {},
         "stem": [],
         "branch": [],
         "leaf": []
     }
+
+    # 0. FETCH ROOT
+    root_res = supabase_client.table("root_profile").select("*").eq("user_id", user_id).single().execute()
+    if root_res.data:
+        memory_map["root"] = root_res.data
     
     # 1. FETCH STEM (All, or heavily prioritized)
     stems = supabase_client.table("memory_nodes")\

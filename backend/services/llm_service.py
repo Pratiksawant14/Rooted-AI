@@ -66,18 +66,69 @@ def analyze_message(message: str) -> AnalyzedContext:
             confidence=0.5
         )
 
+def check_root_relevance(context_content: str, root_profile: dict) -> str:
+    """
+    Checks if the new memory aligns with, matches, or contradicts the ROOT persona.
+    """
+    if not root_profile:
+        return "neutral"
+
+    root_summary = root_profile.get("persona_summary", "Unknown")
+    root_traits = root_profile.get("traits", {})
+    root_values = root_profile.get("values", {})
+
+    prompt = f"""
+    You are the ROOT Alignment Engine.
+    
+    ROOT PERSONA:
+    Summary: {root_summary}
+    Traits: {root_traits}
+    Values: {root_values}
+    
+    NEW MEMORY CANDIDATE:
+    "{context_content}"
+    
+    TASK:
+    Determine alignment of candidate with ROOT.
+    
+    RULES:
+    - "aligned": Supports or exemplifies existing root traits/values.
+    - "contradictory": Directly opposes specific root traits/values.
+    - "neutral": Unrelated or doesn't strongly interact with root.
+    - "redefining": A massive, explicit life change stated by user (rare).
+    
+    OUTPUT JSON:
+    {{
+      "root_alignment": "aligned" | "contradictory" | "neutral" | "redefining",
+      "reasoning": "brief explanation"
+    }}
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="openai/gpt-4o-mini" if base_url else "gpt-4o-mini",
+            messages=[{"role": "system", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0
+        )
+        result = json.loads(response.choices[0].message.content)
+        return result.get("root_alignment", "neutral")
+    except Exception as e:
+        print(f"Error checking root relevance: {e}")
+        return "neutral"
+
 def generate_ai_response(message: str, history: str, context: str) -> str:
     system_prompt = f"""
     You are ROOTED AI, a deeply contextual companion.
     
-    RETRIEVED MEMORY (Your internal context tree):
+    RETRIEVED MEMORY SYSTEM:
     {context}
     
     INSTRUCTIONS:
-    - distinct "personality" is not required, but be helpful, wise, and grounded.
-    - Uses the retrieved memory to form a personalized response.
-    - If the user contradicts a known fact (STEM memory), gently query it or accept the change if explicit.
-    - Do NOT mention "I retrieved this from memory" directly. Just know it.
+    1. **ROOT LAYER (Persona Anchor)**: This is the user's core identity. It is your primary truth.
+    2. **STEM/BRANCH/LEAF**: These are context. If a LEAF contradicts ROOT, ignore the LEAF.
+    3. **Tone**: Resonate with the user's identified ROOT traits (e.g. if they are 'analytical', be precise).
+    4. **Response**: Be helpful, wise, and grounded. Do NOT mention the memory system internally.
     """
     
     response = client.chat.completions.create(

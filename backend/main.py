@@ -66,7 +66,9 @@ async def chat_endpoint(request: ChatRequest, authorization: str = Header(None),
         memory_map = retrieve_relevant_memory(user_id, request.message, analyzed_ctx.domains, auth_client)
         
         # Format context for LLM
+        # Format context for LLM
         context_str = f"""
+        ROOT (Core Persona): {memory_map.get('root', {}).get('persona_summary', 'Not established')}
         STEM (Core Identity): {memory_map['stem']}
         BRANCH (Habits/Patterns): {memory_map['branch']}
         LEAF (Recent Events): {memory_map['leaf']}
