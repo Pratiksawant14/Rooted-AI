@@ -140,3 +140,64 @@ def generate_ai_response(message: str, history: str, context: str) -> str:
         max_tokens=1000
     )
     return response.choices[0].message.content
+def check_root_eligibility(context: AnalyzedContext) -> dict:
+    """
+    Determines if memory is ROOT-ELIGIBLE.
+    Returns:
+    {
+      "is_eligible": bool,
+      "updates": { ... } # Only if eligible
+    }
+    """
+    
+    # 1. Fast Filter: Logic Check
+    # Must be identity or long-term/immutable
+    is_potentially_root = (
+        context.category == "identity" or 
+        context.time_scale == "long_term" or 
+        "upbringing" in context.core_content.lower() or
+        "family" in context.core_content.lower() or
+        "origin" in context.core_content.lower()
+    )
+    
+    if not is_potentially_root:
+        return {"is_eligible": False}
+
+    # 2. LLM Verification
+    prompt = f"""
+    You are the ROOT GATEKEEPER.
+    Your job is to identify immutable facts about the user's CORE IDENTITY.
+
+    CANDIDATE MEMORY:
+    "{context.core_content}"
+    
+    METADATA:
+    Category: {context.category}
+    Time Scale: {context.time_scale}
+
+    RULES FOR ELIGIBILITY (ALL MUST BE TRUE):
+    1. Is it a permanent fact? (e.g. "I grew up in Pune", NOT "I live in Pune")
+    2. Is it about origin, culture, upbringing, or fundamental values?
+    3. Is it unlikely to EVER change?
+
+    OUTPUT JSON:
+    {{
+      "is_eligible": true | false,
+      "reason": "why",
+      "extracted_traits": {{ "trait_name": "value" }}, 
+      "extracted_values": ["value1", "value2"],
+      "summary_update": "Concise reinforcement of this identity fact"
+    }}
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="openai/gpt-4o-mini" if base_url else "gpt-4o-mini",
+            messages=[{"role": "system", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        print(f"Error checking root eligibility: {e}")
+        return {"is_eligible": False}

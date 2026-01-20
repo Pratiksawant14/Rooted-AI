@@ -4,7 +4,7 @@ from chromadb.config import Settings as ChromaSettings
 from core.config import get_settings
 from core.database import get_supabase_client
 from schemas import AnalyzedContext
-from services.llm_service import check_root_relevance
+from services.llm_service import check_root_relevance, check_root_eligibility
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -88,10 +88,61 @@ def decay_memories(user_id: str, supabase_client):
         pass
 
 def store_memory(user_id: str, context: AnalyzedContext, supabase_client) -> dict:
-    # 0. Fetch ROOT Profile for Alignment Check
+    # 0. Fetch ROOT Profile
     root_res = supabase_client.table("root_profile").select("*").eq("user_id", user_id).maybe_single().execute()
     root_profile = root_res.data if root_res and root_res.data else None
     
+    # === NEW: ROOT ELIGIBILITY CHECK (HARD GATE) ===
+    # Check if this memory belongs in the Persona Anchor Layer
+    eligibility = check_root_eligibility(context)
+    
+    if eligibility.get("is_eligible"):
+        print(f"ROOT UPDATE DETECTED: {eligibility}")
+        
+        # Prepare updates
+        new_summary = eligibility.get("summary_update", "")
+        new_traits = eligibility.get("extracted_traits", {})
+        new_values = eligibility.get("extracted_values", [])
+        
+        # Merge with existing profile if it exists
+        if root_profile:
+            # Merge traits
+            existing_traits = root_profile.get("traits") or {}
+            existing_traits.update(new_traits)
+            
+            # Merge values (unique list)
+            existing_values = root_profile.get("values") or []
+            merged_values = list(set(existing_values + new_values))
+            
+            # Update summary (append logic or replace - for now we append if new)
+            current_summary = root_profile.get("persona_summary", "")
+            if new_summary and new_summary not in current_summary:
+                updated_summary = f"{current_summary}. {new_summary}".strip()
+            else:
+                updated_summary = current_summary
+
+            supabase_client.table("root_profile").update({
+                "persona_summary": updated_summary,
+                "traits": existing_traits,
+                "values": merged_values,
+                "last_updated_at": datetime.now(timezone.utc).isoformat()
+            }).eq("user_id", user_id).execute()
+            
+        else:
+            # Create NEW Root Profile
+            supabase_client.table("root_profile").insert({
+                "user_id": user_id,
+                "persona_summary": new_summary,
+                "traits": new_traits,
+                "values": new_values,
+                "confidence_score": 1.0
+            }).execute()
+            
+        # HARD STOP: Do not store as memory node
+        return {"status": "root_updated", "details": eligibility}
+
+    # === STANDARD PIPELINE FOLLOWS ===
+
     # Check Alignment
     alignment = check_root_relevance(context.core_content, root_profile)
 
