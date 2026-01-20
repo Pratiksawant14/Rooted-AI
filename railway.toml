@@ -1,0 +1,9 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+# We CD into backend first, then run uvicorn. This matches the working local environment.
+startCommand = "cd backend && python -m uvicorn main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/"
+healthcheckTimeout = 120
+restartPolicyType = "on_failure"
