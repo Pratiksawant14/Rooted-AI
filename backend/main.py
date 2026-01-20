@@ -14,6 +14,12 @@ from core.config import get_settings
 from core.security import get_current_user
 
 app = FastAPI(title="ROOTED AI - Backend")
+
+@app.on_event("startup")
+async def startup_event():
+    print("Startup event: Application is ready and listening.")
+    print(f"Server is running on port: {os.environ.get('PORT', 'Unknown')}")
+
 supabase = get_supabase_client()
 settings = get_settings()
 
