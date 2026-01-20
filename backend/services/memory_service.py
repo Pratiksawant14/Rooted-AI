@@ -89,7 +89,7 @@ def decay_memories(user_id: str, supabase_client):
 
 def store_memory(user_id: str, context: AnalyzedContext, supabase_client) -> dict:
     # 0. Fetch ROOT Profile for Alignment Check
-    root_res = supabase_client.table("root_profile").select("*").eq("user_id", user_id).single().execute()
+    root_res = supabase_client.table("root_profile").select("*").eq("user_id", user_id).maybe_single().execute()
     root_profile = root_res.data if root_res.data else None
     
     # Check Alignment
@@ -204,7 +204,7 @@ def retrieve_relevant_memory(user_id: str, query: str, domains: list[str], supab
     }
 
     # 0. FETCH ROOT
-    root_res = supabase_client.table("root_profile").select("*").eq("user_id", user_id).single().execute()
+    root_res = supabase_client.table("root_profile").select("*").eq("user_id", user_id).maybe_single().execute()
     if root_res.data:
         memory_map["root"] = root_res.data
     
