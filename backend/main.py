@@ -17,18 +17,31 @@ app = FastAPI(title="ROOTED AI - Backend")
 supabase = get_supabase_client()
 settings = get_settings()
 
-# CORS Hardening
-# CORS origins from settings (list)
-origins = settings.ALLOWED_ORIGINS
-print(f"Allowed Origins: {origins}")
+# --- MANUAL CORS OVERRIDE START ---
+from fastapi import Request, Response
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Debugging: Allow ALL origins to rule out matching issues
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@app.middleware("http")
+async def cors_handler(request: Request, call_next):
+    # Handle preflight OPTIONS requests directly
+    if request.method == "OPTIONS":
+        response = Response()
+    else:
+        try:
+            response = await call_next(request)
+        except Exception as e:
+            # If app crashes, still send CORS headers so we can see the 500 in browser
+            print(f"Request Error: {e}")
+            response = Response(status_code=500, content="Internal Server Error")
+
+    # Force CORS Headers on ALL responses
+    origin = request.headers.get("origin")
+    response.headers["Access-Control-Allow-Origin"] = origin if origin else "*"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, x-requested-with"
+    
+    return response
+# --- MANUAL CORS OVERRIDE END ---
 
 # User authentication handled by core.security.get_current_user
 
