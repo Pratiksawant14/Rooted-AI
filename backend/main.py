@@ -17,31 +17,25 @@ app = FastAPI(title="ROOTED AI - Backend")
 supabase = get_supabase_client()
 settings = get_settings()
 
-# --- MANUAL CORS OVERRIDE START ---
-from fastapi import Request, Response
+# CORS Configuration
+# Explicitly list known origins to avoid regex pitfalls
+explicit_origins = [
+    "http://localhost:3000",
+    "http://localhost:8000", 
+    "http://localhost:5173",
+    "https://rooted-ai.vercel.app",
+    "https://rooted-ai-tau.vercel.app",
+]
 
-@app.middleware("http")
-async def cors_handler(request: Request, call_next):
-    # Handle preflight OPTIONS requests directly
-    if request.method == "OPTIONS":
-        response = Response()
-    else:
-        try:
-            response = await call_next(request)
-        except Exception as e:
-            # If app crashes, still send CORS headers so we can see the 500 in browser
-            print(f"Request Error: {e}")
-            response = Response(status_code=500, content="Internal Server Error")
-
-    # Force CORS Headers on ALL responses
-    origin = request.headers.get("origin")
-    response.headers["Access-Control-Allow-Origin"] = origin if origin else "*"
-    response.headers["Access-Control-Allow-Credentials"] = "true"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, x-requested-with"
-    
-    return response
-# --- MANUAL CORS OVERRIDE END ---
+# Add middleware with BOTH explicit list and regex for Vercel previews
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=explicit_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # User authentication handled by core.security.get_current_user
 
