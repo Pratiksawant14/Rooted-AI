@@ -18,14 +18,13 @@ supabase = get_supabase_client()
 settings = get_settings()
 
 # CORS Hardening
-# Split by comma and strip whitespace to ensure clean origin strings
-origins = [origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",") if origin.strip()]
+# CORS origins from settings (list)
+origins = settings.ALLOWED_ORIGINS
 print(f"Allowed Origins: {origins}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",  # Allow all Vercel subdomains (previews)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
