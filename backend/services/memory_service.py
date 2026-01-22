@@ -1,4 +1,6 @@
 
+
+import asyncio
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 from core.config import get_settings
@@ -265,62 +267,67 @@ def store_memory(user_id: str, context: AnalyzedContext, supabase_client) -> dic
         
         return record
 
-def retrieve_relevant_memory(user_id: str, query: str, domains: list[str], supabase_client) -> dict:
+async def retrieve_relevant_memory(user_id: str, query: str, domains: list[str], supabase_client) -> dict:
     """
-    Tree-Guided Retrieval:
+    Tree-Guided Retrieval (Optimized):
+    Executes independent fetches in parallel:
     0. ROOT: The core persona anchor.
     1. STEM: ALL stem nodes (Identity/Facts) - Unconditional
     2. BRANCH: Active branches matching domain
     3. LEAF: Only recent & relevant (Vector Search)
     """
     
-    memory_map = {
-        "root": {},
-        "stem": [],
-        "branch": [],
-        "leaf": []
-    }
+    # Define helper functions for each independent task to run in threads
+    def fetch_root():
+        res = supabase_client.table("root_profile").select("*").eq("user_id", user_id).maybe_single().execute()
+        return res.data if res and res.data else {}
 
-    # 0. FETCH ROOT
-    root_res = supabase_client.table("root_profile").select("*").eq("user_id", user_id).maybe_single().execute()
-    if root_res and root_res.data:
-        memory_map["root"] = root_res.data
-    
-    # 1. FETCH STEM (All, or heavily prioritized)
-    stems = supabase_client.table("memory_nodes")\
-        .select("content")\
-        .eq("user_id", user_id)\
-        .eq("priority", "STEM")\
-        .execute()
-        
-    memory_map["stem"] = [row['content'] for row in stems.data]
-    
-    # 2. FETCH BRANCH (Filter by domain if present, else relevant ones)
-    if domains:
-        branches = supabase_client.table("memory_nodes")\
+    def fetch_stem():
+        res = supabase_client.table("memory_nodes")\
+            .select("content")\
+            .eq("user_id", user_id)\
+            .eq("priority", "STEM")\
+            .execute()
+        return [row['content'] for row in res.data]
+
+    def fetch_branch():
+        if not domains:
+            return []
+        res = supabase_client.table("memory_nodes")\
             .select("content")\
             .eq("user_id", user_id)\
             .eq("priority", "BRANCH")\
             .in_("domain", domains)\
             .execute()
-        memory_map["branch"] = [row['content'] for row in branches.data]
-        
-    # 3. FETCH LEAF (Vector Search)
-    # We query Chroma strictly for leaves or just query broadly and filter
-    where_clause = {
-        "$and": [
-            {"user_id": {"$eq": user_id}},
-            {"priority": {"$eq": "LEAF"}}
-        ]
-    }
-    
-    results = memory_collection.query(
-        query_texts=[query],
-        n_results=5,
-        where=where_clause
+        return [row['content'] for row in res.data]
+
+    def fetch_leaf():
+        where_clause = {
+            "$and": [
+                {"user_id": {"$eq": user_id}},
+                {"priority": {"$eq": "LEAF"}}
+            ]
+        }
+        results = memory_collection.query(
+            query_texts=[query],
+            n_results=5,
+            where=where_clause
+        )
+        if results["documents"]:
+            return results["documents"][0]
+        return []
+
+    # Execute all tasks in parallel using asyncio.gather and to_thread
+    root_data, stem_data, branch_data, leaf_data = await asyncio.gather(
+        asyncio.to_thread(fetch_root),
+        asyncio.to_thread(fetch_stem),
+        asyncio.to_thread(fetch_branch),
+        asyncio.to_thread(fetch_leaf)
     )
-    
-    if results["documents"]:
-        memory_map["leaf"] = results["documents"][0]
-        
-    return memory_map
+
+    return {
+        "root": root_data,
+        "stem": stem_data,
+        "branch": branch_data,
+        "leaf": leaf_data
+    }

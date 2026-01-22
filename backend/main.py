@@ -69,7 +69,7 @@ async def chat_endpoint(request: ChatRequest, authorization: str = Header(None),
         stored_node = store_memory(user_id, analyzed_ctx, auth_client)
         
         # 3. Retrieve Tree-Structured Memory
-        memory_map = retrieve_relevant_memory(user_id, request.message, analyzed_ctx.domains, auth_client)
+        memory_map = await retrieve_relevant_memory(user_id, request.message, analyzed_ctx.domains, auth_client)
         
         # Format context for LLM
         # Format context for LLM
