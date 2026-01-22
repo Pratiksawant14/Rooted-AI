@@ -185,7 +185,10 @@ def check_root_eligibility(candidate: MemoryCandidate) -> dict:
         candidate.time_scale == "long_term" or 
         "upbringing" in candidate.core_content.lower() or
         "family" in candidate.core_content.lower() or
-        "origin" in candidate.core_content.lower()
+        "origin" in candidate.core_content.lower() or
+        "name is" in candidate.core_content.lower() or
+        "called" in candidate.core_content.lower() or
+        candidate.core_content.lower().startswith("user is")
     )
     
     if not is_potentially_root:
