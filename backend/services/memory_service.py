@@ -5,8 +5,8 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 from core.config import get_settings
 from core.database import get_supabase_client
-from schemas import AnalyzedContext
-from services.llm_service import check_root_relevance, check_root_eligibility
+from schemas import MemoryCandidate
+from services.llm_service import check_root_relevance, check_root_eligibility, check_storage_eligibility
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -22,11 +22,11 @@ try:
 except:
     memory_collection = chroma_client.create_collection(name=collection_name)
 
-def classify_priority(context: AnalyzedContext) -> str:
+def classify_priority(candidate: MemoryCandidate) -> str:
     """
     Decide STEM, BRANCH, or LEAF based on context.
     """
-    content_lower = context.core_content.lower()
+    content_lower = candidate.core_content.lower()
     
     # === HARD GUARD: PREVENT BELIEFS/VALUES AS STEM ===
     # Beliefs/Values (Subjective, Present Tense) -> LEAF
@@ -42,13 +42,13 @@ def classify_priority(context: AnalyzedContext) -> str:
         return "LEAF"
 
     # === STANDARD CLASSIFICATION ===
-    if context.category == "identity" or context.time_scale == "long_term":
+    if candidate.category == "identity" or candidate.time_scale == "long_term":
         return "STEM"
     
-    if context.category == "habit" or context.time_scale == "repeated":
+    if candidate.category == "habit" or candidate.time_scale == "repeated":
         return "BRANCH"
         
-    if context.confidence > 0.9 and context.importance == "high":
+    if candidate.confidence > 0.9 and candidate.importance == "high":
         return "STEM"
 
     return "LEAF"
@@ -105,167 +105,175 @@ def decay_memories(user_id: str, supabase_client):
         # Update metadata in Chroma
         pass
 
-def store_memory(user_id: str, context: AnalyzedContext, supabase_client) -> dict:
-    # 0. Fetch ROOT Profile
+def process_memory_candidates(user_id: str, candidates: list[MemoryCandidate], supabase_client) -> dict:
+    results = {
+        "processed": 0,
+        "root_updates": 0,
+        "new_memories": 0,
+        "reinforced": 0,
+        "discarded": 0
+    }
+    
+    # Pre-fetch Root Profile ONCE for the batch to minimize reads
     root_res = supabase_client.table("root_profile").select("*").eq("user_id", user_id).maybe_single().execute()
     root_profile = root_res.data if root_res and root_res.data else None
     
-    # === NEW: ROOT ELIGIBILITY CHECK (HARD GATE) ===
-    # Check if this memory belongs in the Persona Anchor Layer
-    eligibility = check_root_eligibility(context)
-    
-    if eligibility.get("is_eligible"):
-        print(f"ROOT UPDATE DETECTED: {eligibility}")
+    for candidate in candidates:
+        results["processed"] += 1
+        
+        # === GATE 1: ROOT ELIGIBILITY (The Persona Anchor) ===
+        eligibility = check_root_eligibility(candidate)
+        
+        if eligibility.get("is_eligible"):
+            print(f"ROOT UPDATE DETECTED: {eligibility}")
+            
+            # Prepare updates
+            new_summary = eligibility.get("summary_update", "")
+            new_traits = eligibility.get("extracted_traits", {})
+            new_values = eligibility.get("extracted_values", [])
+            
+            # Merge with existing profile if it exists
+            if root_profile:
+                # Merge traits
+                existing_traits = root_profile.get("traits") or {}
+                existing_traits.update(new_traits)
+                
+                # Merge values (unique list)
+                existing_values = root_profile.get("values") or []
+                merged_values = list(set(existing_values + new_values))
+                
+                # Update summary
+                current_summary = root_profile.get("persona_summary", "")
+                if new_summary and new_summary not in current_summary:
+                    updated_summary = f"{current_summary}. {new_summary}".strip()
+                else:
+                    updated_summary = current_summary
 
-        # RATE LIMITING: Prevent Persona Drift
-        # Rule: Only 1 ROOT update every 10 minutes (unless new profile)
-        if root_profile:
-            last_update = datetime.fromisoformat(root_profile.get("last_updated_at", str(datetime.min)))
-            time_since = datetime.now(timezone.utc) - last_update
-            if time_since < timedelta(minutes=10):
-                print(f"ROOT UPDATE SKIPPED: Rate limit active ({time_since} < 10m)")
-                return {"status": "skipped_rate_limit", "reason": "Persona drift protection"}
-        
-        # Prepare updates
-        new_summary = eligibility.get("summary_update", "")
-        new_traits = eligibility.get("extracted_traits", {})
-        new_values = eligibility.get("extracted_values", [])
-        
-        # Merge with existing profile if it exists
-        if root_profile:
-            # Merge traits
-            existing_traits = root_profile.get("traits") or {}
-            existing_traits.update(new_traits)
-            
-            # Merge values (unique list)
-            existing_values = root_profile.get("values") or []
-            merged_values = list(set(existing_values + new_values))
-            
-            # Update summary (append logic or replace - for now we append if new)
-            current_summary = root_profile.get("persona_summary", "")
-            if new_summary and new_summary not in current_summary:
-                updated_summary = f"{current_summary}. {new_summary}".strip()
+                updates = {
+                    "persona_summary": updated_summary,
+                    "traits": existing_traits,
+                    "values": merged_values,
+                    "last_updated_at": datetime.now(timezone.utc).isoformat()
+                }
+                
+                supabase_client.table("root_profile").update(updates).eq("user_id", user_id).execute()
+                
+                # Update local root_profile variable in case next candidate needs it
+                root_profile.update(updates)
+                
             else:
-                updated_summary = current_summary
+                # Create NEW Root Profile
+                new_profile = {
+                    "user_id": user_id,
+                    "persona_summary": new_summary,
+                    "traits": new_traits,
+                    "values": new_values,
+                    "confidence_score": 1.0,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "last_updated_at": datetime.now(timezone.utc).isoformat()
+                }
+                supabase_client.table("root_profile").insert(new_profile).execute()
+                root_profile = new_profile
 
-            supabase_client.table("root_profile").update({
-                "persona_summary": updated_summary,
-                "traits": existing_traits,
-                "values": merged_values,
-                "last_updated_at": datetime.now(timezone.utc).isoformat()
-            }).eq("user_id", user_id).execute()
+            results["root_updates"] += 1
+            continue # STOP processing this candidate (absorbed into ROOT)
+
+        # === GATE 2: STORAGE WORTHINESS (Noise Filter) ===
+        if not check_storage_eligibility(candidate):
+            results["discarded"] += 1
+            continue
+
+        # === STANDARD MEMORY STORAGE ===
+        
+        # Check Alignment with Root
+        alignment = check_root_relevance(candidate.core_content, root_profile)
+        
+        # Priority Classification
+        priority = classify_priority(candidate)        
+        
+        # If priority == LEAF AND domain == "general" AND importance is low -> DISCARD
+        # (Double check, although Gate 2 handles most)
+        if priority == "LEAF" and candidate.importance == "low" and candidate.category == "event":
+            results["discarded"] += 1
+            continue
+
+        # Alignment Enforcement
+        if alignment == "contradictory":
+            priority = "LEAF" # Demote contradictory facts
+
+        # Duplicate Check / Reinforcement
+        match = memory_collection.query(
+            query_texts=[candidate.core_content],
+            n_results=1,
+            where={"user_id": user_id}
+        )
+
+        existing_id = None
+        existing_distance = 100
+        
+        if match["ids"] and match["ids"][0]:
+            existing_id = match["ids"][0][0]
+            existing_distance = match["distances"][0][0]
+
+        # Reinforce if very similar
+        if existing_id and existing_distance < 0.25: # Strict similarity
+            record = supabase_client.table("memory_nodes").select("*").eq("id", existing_id).single().execute()
+            data = record.data
+            
+            new_count = (data.get('reinforcement_count') or 1) + 1
+            new_confidence = min(1.0, data.get('confidence', 0.5) + 0.1)
+            
+            updates = {
+                "reinforcement_count": new_count,
+                "confidence": new_confidence,
+                "last_used_at": datetime.now(timezone.utc).isoformat(),
+                "root_alignment": alignment
+            }
+            
+            # Promotion Logic
+            if data['priority'] == "LEAF" and new_count >= 3 and alignment != "contradictory":
+                updates['priority'] = "BRANCH"
+            
+            # STEM Promotion (Very Strict)
+            if data['priority'] == "BRANCH" and new_confidence > 0.95 and candidate.time_scale == "long_term":
+                 updates['priority'] = "STEM"
+                
+            supabase_client.table("memory_nodes").update(updates).eq("id", existing_id).execute()
+            results["reinforced"] += 1
             
         else:
-            # Create NEW Root Profile
-            supabase_client.table("root_profile").insert({
+            # Insert NEW
+            row = {
                 "user_id": user_id,
-                "persona_summary": new_summary,
-                "traits": new_traits,
-                "values": new_values,
-                "confidence_score": 1.0,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "last_updated_at": datetime.now(timezone.utc).isoformat()
-            }).execute()
+                "domain": candidate.domain,
+                "priority": priority,
+                "node_type": candidate.category,
+                "content": candidate.core_content,
+                "confidence": candidate.confidence,
+                "reinforcement_count": 1,
+                "last_used_at": datetime.now(timezone.utc).isoformat(),
+                "root_alignment": alignment
+            }
             
-        # HARD STOP: Do not store as memory node
-        return {"status": "root_updated", "details": eligibility}
-
-    # === STANDARD PIPELINE FOLLOWS ===
-
-    # Check Alignment
-    alignment = check_root_relevance(context.core_content, root_profile)
-
-    # 1. Noise Filtering
-    # If priority == LEAF AND domain == "general" AND importance is low -> DISCARD
-    priority = classify_priority(context)
-    primary_domain = context.domains[0] if context.domains else "general"
-
-    if priority == "LEAF" and "general" in context.domains and context.importance == "low":
-        return None
-
-    # ROOT MODIFIER RULE:
-    # If candidate contradicts ROOT -> prevent promotion, keep as LEAF
-    if alignment == "contradictory":
-        priority = "LEAF"
-
-    # 2. Check for Duplicates / Reinforcement
-    # Search Chroma for very similar content
-    results = memory_collection.query(
-        query_texts=[context.core_content],
-        n_results=1,
-        where={"user_id": user_id}
-    )
-
-    existing_id = None
-    existing_distance = 100
-    
-    if results["ids"] and results["ids"][0]:
-        existing_id = results["ids"][0][0]
-        existing_distance = results["distances"][0][0]
-
-    # Threshold for "Same Memory". Chroma distance: lower is closer. 
-    # Let's assume < 0.3 implies very close semantic match.
-    if existing_id and existing_distance < 0.3:
-        # REINFORCE
-        # Fetch current record
-        record = supabase_client.table("memory_nodes").select("*").eq("id", existing_id).single().execute()
-        data = record.data
-        
-        new_count = (data.get('reinforcement_count') or 1) + 1
-        new_confidence = min(1.0, data.get('confidence', 0.5) + 0.1)
-        
-        updates = {
-            "reinforcement_count": new_count,
-            "confidence": new_confidence,
-            "last_used_at": datetime.now(timezone.utc).isoformat(),
-            "root_alignment": alignment
-        }
-        
-        # PROMOTION LOGIC
-        # LEAF -> BRANCH if count >= 3 AND not contradictory
-        if data['priority'] == "LEAF" and new_count >= 3 and alignment != "contradictory":
-            updates['priority'] = "BRANCH"
-        
-        # BRANCH -> STEM if long-term + high confidence (strict) AND aligned/neutral
-        if data['priority'] == "BRANCH" and new_confidence > 0.9 and context.time_scale == "long_term" and alignment != "contradictory":
-            updates['priority'] = "STEM"
+            res = supabase_client.table("memory_nodes").insert(row).execute()
+            record_id = res.data[0]['id']
             
-        final = supabase_client.table("memory_nodes").update(updates).eq("id", existing_id).execute()
-        return final.data[0]
-        
-    else:
-        # INSERT NEW
-        row = {
-            "user_id": user_id,
-            "domain": primary_domain,
-            "priority": priority,
-            "node_type": context.category, # category
-            "content": context.core_content,
-            "confidence": context.confidence,
-            "reinforcement_count": 1,
-            "last_used_at": datetime.now(timezone.utc).isoformat(),
-            "root_alignment": alignment
-        }
-        
-        data = supabase_client.table("memory_nodes").insert(row).execute()
-        record = data.data[0]
-        record_id = record['id']
-        
-        metadata = {
-            "user_id": user_id,
-            "domain": primary_domain,
-            "priority": priority,
-            "type": context.category,
-            "root_alignment": alignment
-        }
-        
-        memory_collection.add(
-            documents=[context.core_content],
-            metadatas=[metadata],
-            ids=[record_id]
-        )
-        
-        return record
+            metadata = {
+                "user_id": user_id,
+                "domain": candidate.domain,
+                "priority": priority,
+                "type": candidate.category,
+                "root_alignment": alignment
+            }
+            
+            memory_collection.add(
+                documents=[candidate.core_content],
+                metadatas=[metadata],
+                ids=[record_id]
+            )
+            results["new_memories"] += 1
+
+    return results
 
 async def retrieve_relevant_memory(user_id: str, query: str, domains: list[str], supabase_client) -> dict:
     """

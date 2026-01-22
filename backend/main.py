@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from schemas import ChatRequest, ChatResponse
-from services.llm_service import analyze_message, generate_ai_response
-from services.memory_service import store_memory, retrieve_relevant_memory, decay_memories
+from services.llm_service import extract_memory_candidates, generate_ai_response
+from services.memory_service import process_memory_candidates, retrieve_relevant_memory, decay_memories
 from core.database import get_supabase_client
 from core.config import get_settings
 from core.security import get_current_user
@@ -62,14 +62,14 @@ async def chat_endpoint(request: ChatRequest, authorization: str = Header(None),
         # Lifecycle: Decay old memories first
         decay_memories(user_id, auth_client)
 
-        # 1. Analyze Context
-        analyzed_ctx = analyze_message(request.message)
+        # 1. Analyze Context & Extract Candidates
+        analysis_result = extract_memory_candidates(request.message)
         
-        # 2. Store Memory (returns None if noise)
-        stored_node = store_memory(user_id, analyzed_ctx, auth_client)
+        # 2. Process Candidates (Root Gate, Storage Gate, Priority, Store)
+        process_memory_candidates(user_id, analysis_result.candidates, auth_client)
         
         # 3. Retrieve Tree-Structured Memory
-        memory_map = await retrieve_relevant_memory(user_id, request.message, analyzed_ctx.domains, auth_client)
+        memory_map = await retrieve_relevant_memory(user_id, request.message, analysis_result.domains, auth_client)
         
         # Format context for LLM
         # Format context for LLM
