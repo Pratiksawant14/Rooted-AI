@@ -73,11 +73,26 @@ async def chat_endpoint(request: ChatRequest, authorization: str = Header(None),
         
         # Format context for LLM
         # Format context for LLM
+        # Format context for LLM with explicit ROOT injection
+        root_data = memory_map.get('root', {})
+        
         context_str = f"""
-        ROOT (Core Persona): {memory_map.get('root', {}).get('persona_summary', 'Not established')}
-        STEM (Core Identity): {memory_map['stem']}
-        BRANCH (Habits/Patterns): {memory_map['branch']}
-        LEAF (Recent Events): {memory_map['leaf']}
+        ========== RETRIEVED MEMORY CONTEXT ==========
+        
+        [ROOT LAYER - CORE PERSONA (Highest Authority)]
+        Summary: {root_data.get('persona_summary', 'Not established')}
+        Traits & Facts: {root_data.get('traits', {})}
+        Core Values: {root_data.get('values', [])}
+        
+        [STEM LAYER - IDENTITY & ROLES]
+        {memory_map['stem']}
+        
+        [BRANCH LAYER - HABITS & PATTERNS]
+        {memory_map['branch']}
+        
+        [LEAF LAYER - RECENT DISCOVERY]
+        {memory_map['leaf']}
+        ==============================================
         """
         
         # 4. Generate Response
